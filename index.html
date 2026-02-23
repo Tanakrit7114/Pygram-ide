@@ -440,7 +440,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);
   <span>🐍 Python 3</span><span class="sp">|</span>
   <span id="s-cur">Ln 1, Col 1</span><span class="sp">|</span>
   <span id="s-lc" data-i18n-lines="true">0 lines</span>
-  <span id="s-run" style="margin-left:auto" data-i18n="sRun">🐍 Pyodide ready · AI: Gemini</span>
+  <span id="s-run" style="margin-left:auto" data-i18n="sRun">🐍 Pyodide ready · AI: OpenRouter</span>
 </div>
 <div id="toast"></div>
 <div id="ctx">
@@ -568,7 +568,7 @@ const UI={
     doTheory:'อธิบาย + โค้ดตัวอย่าง', algoPh:'เช่น Quick Sort, Binary Tree...',
     doAlgo:'สรุปข้อมูล', fcLabel:'โค้ดที่ต้องการแผนผัง', doFC:'🔀 สร้าง Flowchart',
     aiPh:'ผลลัพธ์จาก AI จะแสดงที่นี่...',
-    sRun:'🐍 Pyodide ready · AI: Gemini',
+    sRun:'🐍 Pyodide ready · AI: OpenRouter',
     ctxRename:'✏️ เปลี่ยนชื่อ', ctxDup:'⧉ ทำสำเนา', ctxDel:'🗑 ลบ',
     saveKey:'💾 บันทึก', newFile:'ไฟล์ใหม่', fromTemplate:'จากเทมเพลต',
     sbExplorer:'Explorer', sbRun:'รัน (Ctrl+Enter)', sbClear:'ล้าง', sbCopy:'คัดลอก',
@@ -587,7 +587,7 @@ const UI={
     doTheory:'Explain + Example code', algoPh:'e.g. Quick Sort, Binary Tree...',
     doAlgo:'Summarize', fcLabel:'Code to visualize', doFC:'🔀 Generate Flowchart',
     aiPh:'AI output will appear here...',
-    sRun:'🐍 Pyodide ready · AI: Gemini',
+    sRun:'🐍 Pyodide ready · AI: OpenRouter',
     ctxRename:'✏️ Rename', ctxDup:'⧉ Duplicate', ctxDel:'🗑 Delete',
     saveKey:'💾 Save', newFile:'New File', fromTemplate:'From Template',
     sbExplorer:'Explorer', sbRun:'Run (Ctrl+Enter)', sbClear:'Clear', sbCopy:'Copy',
@@ -790,9 +790,9 @@ window.addEventListener('DOMContentLoaded',()=>{
   runEngine='pyodide';
   if(!pyodideReady&&!pyodideLoading) initPyodide();
   // Load saved API key silently (still used by AI features)
-  const savedKey=localStorage.getItem('pg_apikey')||'AIzaSyDLB6hKapWp5W8fU8CiWg3PV_SgmyrPbgY';
+  const savedKey=localStorage.getItem('pg_apikey')||'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';
   if(savedKey) localStorage.setItem('pg_apikey',savedKey);
-  const savedModel=localStorage.getItem('pg_model')||'gemini-1.5-flash';
+  const savedModel=localStorage.getItem('pg_model')||'deepseek/deepseek-chat-v3-0324:free';
   localStorage.setItem('pg_model', savedModel);
 
   inp.addEventListener('input',()=>{syncFile();updateHL();updateLN();updStat();});
@@ -953,35 +953,37 @@ plt.show=_show_patch
 
 // ─── GEMINI AI ───────────────────────────────────────────────────────────────
 function getApiKey(){return localStorage.getItem('pg_apikey')||'';}
-function getModel(){return localStorage.getItem('pg_model')||'gemini-1.5-flash';}
+function getModel(){return localStorage.getItem('pg_model')||'deepseek/deepseek-chat-v3-0324:free';}
 function saveApiKey(key,model){
   if(key) localStorage.setItem('pg_apikey',key);
   if(model) localStorage.setItem('pg_model',model);
 }
 
-// Helper: call Gemini API via allorigins proxy (fixes CORS from file://)
+// Helper: call OpenRouter API
 async function geminiRequest(prompt, maxTokens=1500, systemInstruction=null){
   const key=getApiKey();
-  if(!key) throw new Error('กรุณาใส่ Gemini API Key ก่อน');
+  if(!key) throw new Error('กรุณาใส่ OpenRouter API Key ก่อน');
   const modelName=getModel();
-  const body={
-    contents:[{role:'user',parts:[{text:prompt}]}],
-    generationConfig:{maxOutputTokens:maxTokens,temperature:0.7}
-  };
-  if(systemInstruction) body.system_instruction={parts:[{text:systemInstruction}]};
-
-  // ใช้ corsproxy.io เพื่อแก้ปัญหา CORS จาก file://
-  const target=`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${key}`;
-  const res=await fetch(`https://corsproxy.io/?${encodeURIComponent(target)}`,
-    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
-  );
+  const messages=[];
+  if(systemInstruction) messages.push({role:'system',content:systemInstruction});
+  messages.push({role:'user',content:prompt});
+  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':`Bearer ${key}`,
+      'HTTP-Referer':'https://pygram-ide.local',
+      'X-Title':'Pygram IDE'
+    },
+    body:JSON.stringify({model:modelName,max_tokens:maxTokens,messages})
+  });
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
-    throw new Error(err.error?.message||`Gemini Error ${res.status}: ${res.statusText}`);
+    throw new Error(err.error?.message||`OpenRouter Error ${res.status}`);
   }
   const d=await res.json();
-  const text=d.candidates?.[0]?.content?.parts?.[0]?.text;
-  if(!text) throw new Error('ไม่ได้รับข้อมูลจาก Gemini');
+  const text=d.choices?.[0]?.message?.content;
+  if(!text) throw new Error('ไม่ได้รับข้อมูลจาก OpenRouter');
   return text;
 }
 
@@ -1226,7 +1228,7 @@ async function doFC(){
   const l=lang,hasE=err.length>0;
   const numbered=code.split('\n').map((ln,i)=>`${i+1}|${ln}`).join('\n');
   const key=getApiKey();
-  if(!key){cv.innerHTML='<div style="padding:14px;color:var(--red);font-size:12px">กรุณาใส่ Gemini API Key</div>';return;}
+  if(!key){cv.innerHTML='<div style="padding:14px;color:var(--red);font-size:12px">กรุณาใส่ OpenRouter API Key</div>';return;}
 
   const p=`Return a flowchart as a JSON array for this Python code.
 ${hasE?`Error: ${err}`:''}
@@ -1447,20 +1449,20 @@ function renderFC(nodes,hasErr,sourceCode){
 
 <div id="settings-modal">
   <div id="settings-box">
-    <div class="s-title">⚙ Gemini API Settings</div>
+    <div class="s-title">⚙ OpenRouter API Settings</div>
     <div>
-      <div class="s-lbl">Gemini API Key</div>
-      <input class="s-inp" id="s-apikey" type="password" placeholder="AIza...">
-      <div class="s-hint" style="margin-top:4px">รับ API Key ฟรีได้ที่ <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a></div>
+      <div class="s-lbl">OpenRouter API Key</div>
+      <input class="s-inp" id="s-apikey" type="password" placeholder="sk-or-v1-...">
+      <div class="s-hint" style="margin-top:4px">รับ API Key ฟรีได้ที่ <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></div>
     </div>
     <div>
       <div class="s-lbl">Model</div>
       <select class="s-inp" id="s-model">
-        <option value="gemini-1.5-flash">gemini-1.5-flash (แนะนำ/ฟรี)</option>
-        <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-        <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (เร็วที่สุด)</option>
-        <option value="gemini-2.0-flash">gemini-2.0-flash</option>
-        <option value="gemini-2.5-pro-preview-05-06">gemini-2.5-pro-preview</option>
+        <option value="deepseek/deepseek-chat-v3-0324:free">deepseek-chat-v3 (ฟรี แนะนำ)</option>
+        <option value="google/gemini-2.0-flash-exp:free">gemini-2.0-flash (ฟรี)</option>
+        <option value="meta-llama/llama-4-scout:free">llama-4-scout (ฟรี)</option>
+        <option value="anthropic/claude-3.5-haiku">claude-3.5-haiku</option>
+        <option value="openai/gpt-4o-mini">gpt-4o-mini</option>
       </select>
     </div>
     <div class="s-row">
