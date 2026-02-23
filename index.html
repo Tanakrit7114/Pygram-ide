@@ -951,91 +951,34 @@ plt.show=_show_patch
   return {text,plots};
 }
 
-// ─── AI CONFIG ─────────────────────────────────────────────
-
-function getApiKey(){
-  return localStorage.getItem('pg_apikey') || '';
+// ─── GEMINI AI ───────────────────────────────────────────────────────────────
+function getApiKey(){return localStorage.getItem('pg_apikey')||'';}
+function getModel(){return localStorage.getItem('pg_model')||'deepseek/deepseek-chat-v3-0324:free';}
+function saveApiKey(key,model){
+  if(key) localStorage.setItem('pg_apikey',key);
+  if(model) localStorage.setItem('pg_model',model);
 }
 
-// 🔥 เปลี่ยน default model ให้เสถียร
-function getModel(){
-  return localStorage.getItem('pg_model') || 'openai/gpt-4o-mini';
-}
-
-function saveApiKey(key, model){
-  if(key) localStorage.setItem('pg_apikey', key);
-  if(model) localStorage.setItem('pg_model', model);
-}
-
-
-// ─── GAS PROXY ─────────────────────────────────────────────
-
-const GAS_PROXY = 'https://script.google.com/macros/s/AKfycbyZvRPKegPocV58KiZKdGrkIoOTs_RQF_7xT0Fs8aRMljsQCljGOt-u1bkxbOPu4S60/exec';
-
-
-// ─── AI REQUEST ─────────────────────────────────────────────
-
-async function geminiRequest(prompt, maxTokens = 1500, systemInstruction = null){
-
-  const modelName = getModel();
-
-  const messages = [];
-
-  if(systemInstruction){
-    messages.push({
-      role: 'system',
-      content: systemInstruction
-    });
-  }
-
-  messages.push({
-    role: 'user',
-    content: prompt
+// Helper: call OpenRouter via GAS proxy (API Key hidden)
+const GAS_PROXY = 'https://script.google.com/macros/s/AKfycbwu0hBSSM8kv65lYrUGujrlGbT0AaWI2H-JBDSQwsjboOTk2Tks6uRZIMV6_iefutNF/exec';
+async function geminiRequest(prompt, maxTokens=1500, systemInstruction=null){
+  const modelName=getModel();
+  const messages=[];
+  if(systemInstruction) messages.push({role:'system',content:systemInstruction});
+  messages.push({role:'user',content:prompt});
+  const res=await fetch(GAS_PROXY,{
+    method:'POST',
+    headers:{'Content-Type':'text/plain'},
+    body:JSON.stringify({model:modelName,max_tokens:maxTokens,messages}),
+    redirect:'follow'
   });
-
-  const res = await fetch(GAS_PROXY,{
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain'
-    },
-    body: JSON.stringify({
-      model: modelName,
-      max_tokens: maxTokens,
-      messages: messages
-    })
-  });
-
-  // 🔥 อ่านเป็น text ก่อน กัน JSON พัง
-  const rawText = await res.text();
-
   if(!res.ok){
-    throw new Error(`Proxy Error ${res.status} → ${rawText}`);
+    const err=await res.json().catch(()=>({}));
+    throw new Error(err.error?.message||`Proxy Error ${res.status}`);
   }
-
-  let data;
-
-  try{
-    data = JSON.parse(rawText);
-  }catch{
-    throw new Error("AI ตอบกลับไม่ใช่ JSON:\n" + rawText);
-  }
-
-  // 🔥 ถ้า OpenRouter ส่ง error มา
-  if(data.error){
-    throw new Error(
-      data.error.message || JSON.stringify(data.error)
-    );
-  }
-
-  const text = data.choices?.[0]?.message?.content;
-
-  if(!text){
-    throw new Error(
-      "ไม่ได้รับข้อมูลจาก AI:\n" +
-      JSON.stringify(data).slice(0,300)
-    );
-  }
-
+  const d=await res.json();
+  const text=d.choices?.[0]?.message?.content;
+  if(!text) throw new Error('ไม่ได้รับข้อมูลจาก AI: '+JSON.stringify(d).slice(0,200));
   return text;
 }
 
@@ -1181,13 +1124,14 @@ async function testApiKey(){
   const res=document.getElementById('s-test-result');
   res.style.color='var(--dim)';res.textContent='⏳ กำลังทดสอบ...';
   try{
-    const r=await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-      {method:'POST',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({contents:[{role:'user',parts:[{text:'say hi'}]}],generationConfig:{maxOutputTokens:10}})}
-    );
-    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||`HTTP ${r.status}`);}
-    res.style.color='var(--green)';res.textContent='✅ API Key ใช้งานได้!';
+    const r=await fetch(GAS_PROXY,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({model,max_tokens:5,messages:[{role:'user',content:'say hi'}]}),
+      redirect:'follow'
+    });
+    if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error?.message||`Proxy Error ${r.status}`);}
+    res.style.color='var(--green)';res.textContent='✅ เชื่อมต่อ OpenRouter สำเร็จ!';
   }catch(e){
     res.style.color='var(--red)';res.textContent='❌ '+e.message;
   }
@@ -1503,9 +1447,10 @@ function renderFC(nodes,hasErr,sourceCode){
   <div id="settings-box">
     <div class="s-title">⚙ OpenRouter API Settings</div>
     <div>
-      <div class="s-lbl">OpenRouter API Key</div>
-      <input class="s-inp" id="s-apikey" type="password" placeholder="sk-or-v1-...">
-      <div class="s-hint" style="margin-top:4px">รับ API Key ฟรีได้ที่ <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></div>
+      <div class="s-hint" style="padding:8px;background:rgba(0,212,170,.08);border-radius:6px;border:1px solid rgba(0,212,170,.2);margin-bottom:4px">
+        🔒 API Key ถูกซ่อนโดย Proxy อัตโนมัติ ไม่จำเป็นต้องใส่
+      </div>
+      <input type="hidden" id="s-apikey" value="">
     </div>
     <div>
       <div class="s-lbl">Model</div>
@@ -1513,8 +1458,8 @@ function renderFC(nodes,hasErr,sourceCode){
         <option value="deepseek/deepseek-chat-v3-0324:free">deepseek-chat-v3 (ฟรี แนะนำ)</option>
         <option value="google/gemini-2.0-flash-exp:free">gemini-2.0-flash (ฟรี)</option>
         <option value="meta-llama/llama-4-scout:free">llama-4-scout (ฟรี)</option>
-        <option value="anthropic/claude-3.5-haiku">claude-3.5-haiku</option>
-        <option value="openai/gpt-4o-mini">gpt-4o-mini</option>
+        
+        
       </select>
     </div>
     <div class="s-row">
