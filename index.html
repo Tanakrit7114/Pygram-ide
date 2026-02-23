@@ -790,7 +790,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   runEngine='pyodide';
   if(!pyodideReady&&!pyodideLoading) initPyodide();
   // Load saved API key silently (still used by AI features)
-  const savedKey=localStorage.getItem('pg_apikey')||'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';
+  const savedKey=localStorage.getItem('pg_apikey')||'';
   if(savedKey) localStorage.setItem('pg_apikey',savedKey);
   const savedModel=localStorage.getItem('pg_model')||'deepseek/deepseek-chat-v3-0324:free';
   localStorage.setItem('pg_model', savedModel);
@@ -959,31 +959,26 @@ function saveApiKey(key,model){
   if(model) localStorage.setItem('pg_model',model);
 }
 
-// Helper: call OpenRouter API
+// Helper: call OpenRouter via GAS proxy (API Key hidden)
+const GAS_PROXY = 'https://script.google.com/macros/s/AKfycbyZvRPKegPocV58KiZKdGrkIoOTs_RQF_7xT0Fs8aRMljsQCljGOt-u1bkxbOPu4S60/exec';
 async function geminiRequest(prompt, maxTokens=1500, systemInstruction=null){
-  const key=getApiKey();
-  if(!key) throw new Error('กรุณาใส่ OpenRouter API Key ก่อน');
   const modelName=getModel();
   const messages=[];
   if(systemInstruction) messages.push({role:'system',content:systemInstruction});
   messages.push({role:'user',content:prompt});
-  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+  const res=await fetch(GAS_PROXY,{
     method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'Authorization':`Bearer ${key}`,
-      'HTTP-Referer':'https://pygram-ide.local',
-      'X-Title':'Pygram IDE'
-    },
-    body:JSON.stringify({model:modelName,max_tokens:maxTokens,messages})
+    headers:{'Content-Type':'text/plain'},
+    body:JSON.stringify({model:modelName,max_tokens:maxTokens,messages}),
+    redirect:'follow'
   });
   if(!res.ok){
     const err=await res.json().catch(()=>({}));
-    throw new Error(err.error?.message||`OpenRouter Error ${res.status}`);
+    throw new Error(err.error?.message||`Proxy Error ${res.status}`);
   }
   const d=await res.json();
   const text=d.choices?.[0]?.message?.content;
-  if(!text) throw new Error('ไม่ได้รับข้อมูลจาก OpenRouter');
+  if(!text) throw new Error('ไม่ได้รับข้อมูลจาก AI: '+JSON.stringify(d).slice(0,200));
   return text;
 }
 
